@@ -11,7 +11,8 @@ from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 import re
 
-BASE_URL = "http://localhost:8002"  
+BASE_URL = "http://localhost:8002"  # Traditional models API
+BERT_URL = "http://localhost:8003"  # BERT model API
 
 class TextPreprocessor:
     def __init__(self):
@@ -28,6 +29,13 @@ class TextPreprocessor:
         tokens = [token for token in tokens if token not in self.stop_words]  
         tokens = [self.lemmatizer.lemmatize(token) for token in tokens]  
         return ' '.join(tokens)
+
+def check_server_connection(url):
+    try:
+        requests.get(f"{url}/health", timeout=2)
+        return True
+    except:
+        return False
 
 def homepage():
     st.markdown(
@@ -75,7 +83,7 @@ def model_selection_page():
     st.title("Select the Model")
     model = st.selectbox(
         "Choose the model for classification",
-        ["Logistic Regression", "Naive Bayes", "SVM"]
+        ["Logistic Regression", "Naive Bayes", "SVM", "BERT"]
     )
     if model:
         st.session_state.selected_model = model
@@ -84,50 +92,66 @@ def model_selection_page():
 
 def model_input_page():
     st.title(f"{st.session_state.selected_model} Model")
+    
+    api_url = BERT_URL if st.session_state.selected_model == "BERT" else BASE_URL
+    
+    if not check_server_connection(api_url):
+        st.error(f"⚠️ Unable to connect to the server at {api_url}")
+        return
+
     st.write("Enter the text you want to classify:")
     user_input = st.text_area("Text input", height=200)
 
     if user_input:
-        
-        if st.session_state.selected_model == "Logistic Regression":
-            response = requests.post(f"{BASE_URL}/predict_logistic", json={"text": user_input})
-        elif st.session_state.selected_model == "Naive Bayes":
-            response = requests.post(f"{BASE_URL}/predict_naive_bayes", json={"text": user_input})
-        elif st.session_state.selected_model == "SVM":
-            response = requests.post(f"{BASE_URL}/predict_svm", json={"text": user_input})
+        try:
+            endpoint = ""
+            if st.session_state.selected_model == "BERT":
+                endpoint = f"{BERT_URL}/predict_bert"
+            elif st.session_state.selected_model == "Logistic Regression":
+                endpoint = f"{BASE_URL}/predict_logistic"
+            elif st.session_state.selected_model == "Naive Bayes":
+                endpoint = f"{BASE_URL}/predict_naive_bayes"
+            elif st.session_state.selected_model == "SVM":
+                endpoint = f"{BASE_URL}/predict_svm"
 
-        if response.status_code == 200:
-            prediction = response.json()["predicted_label"]
-            st.write(f"Predicted label: {prediction}")
-            
-            st.subheader("Word Cloud")
-            wordcloud = WordCloud(width=600, height=400, background_color='white').generate(user_input)
-            fig_wordcloud = plt.figure(figsize=(8, 6))
-            plt.imshow(wordcloud, interpolation='bilinear')
-            plt.axis('off')
-            st.pyplot(fig_wordcloud)
+            with st.spinner('Processing...'):
+                response = requests.post(endpoint, json={"text": user_input}, timeout=10)
+                
+                if response.status_code == 200:
+                    prediction = response.json()["predicted_label"]
+                    st.success(f"Predicted label: {'Fake' if prediction == 0 else 'Real'}")
+                    
+                    st.subheader("Word Cloud")
+                    wordcloud = WordCloud(width=600, height=400, background_color='white').generate(user_input)
+                    fig_wordcloud = plt.figure(figsize=(8, 6))
+                    plt.imshow(wordcloud, interpolation='bilinear')
+                    plt.axis('off')
+                    st.pyplot(fig_wordcloud)
 
-            data = {"Model": [st.session_state.selected_model], "Prediction": [prediction]}
-            df = pd.DataFrame(data)
-            fig = px.bar(df, x="Model", y="Prediction", title="Model Prediction")
-            st.plotly_chart(fig)
+                    data = {"Model": [st.session_state.selected_model], "Prediction": [prediction]}
+                    df = pd.DataFrame(data)
+                    fig = px.bar(df, x="Model", y="Prediction", title="Model Prediction")
+                    st.plotly_chart(fig)
 
-            tfidf_vectorizer = TfidfVectorizer(max_features=10)
-            tfidf_matrix = tfidf_vectorizer.fit_transform([user_input])
-            tfidf_scores = np.array(tfidf_matrix.sum(axis=0)).flatten()
-            features = tfidf_vectorizer.get_feature_names_out()
-            tfidf_data = pd.DataFrame(list(zip(features, tfidf_scores)), columns=["Feature", "TF-IDF Score"])
-            fig_tfidf = px.bar(tfidf_data, x="Feature", y="TF-IDF Score", title="Top 10 TF-IDF Features")
-            st.plotly_chart(fig_tfidf)
+                    tfidf_vectorizer = TfidfVectorizer(max_features=10)
+                    tfidf_matrix = tfidf_vectorizer.fit_transform([user_input])
+                    tfidf_scores = np.array(tfidf_matrix.sum(axis=0)).flatten()
+                    features = tfidf_vectorizer.get_feature_names_out()
+                    tfidf_data = pd.DataFrame(list(zip(features, tfidf_scores)), columns=["Feature", "TF-IDF Score"])
+                    fig_tfidf = px.bar(tfidf_data, x="Feature", y="TF-IDF Score", title="Top 10 TF-IDF Features")
+                    st.plotly_chart(fig_tfidf)
 
-            text_length = len(user_input.split())
-            st.subheader("Text Length Distribution")
-            st.write(f"Number of words in input text: {text_length}")
-            fig_length = px.histogram([text_length], title="Text Length Distribution", labels={'value': 'Text Length (Words)'})
-            st.plotly_chart(fig_length)
+                    text_length = len(user_input.split())
+                    st.subheader("Text Length Distribution")
+                    st.write(f"Number of words in input text: {text_length}")
+                    fig_length = px.histogram([text_length], title="Text Length Distribution", labels={'value': 'Text Length (Words)'})
+                    st.plotly_chart(fig_length)
 
-        else:
-            st.error("Error in prediction, please try again!")
+                else:
+                    st.error(f"Error: Server returned status code {response.status_code}")
+                
+        except Exception as e:
+            st.error(f"Error processing request: {str(e)}")
 
 def main():
     st.set_page_config(page_title="Fake News Classifier App", layout="wide")

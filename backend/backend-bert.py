@@ -87,6 +87,11 @@ def predict_bert(user_input: PredictionRequest):
     return {"text": user_input.text, "predicted_label": predicted_label}
 
 
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="localhost", port=8003)
