@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import pandas as pd
 import joblib
@@ -7,13 +7,21 @@ from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 import re
+import nltk
 
 app = FastAPI()
 
+# Download required NLTK resources
+try:
+    nltk.download('stopwords')
+    nltk.download('punkt')
+    nltk.download('wordnet')
+except Exception as e:
+    print(f"Error downloading NLTK resources: {e}")
 
-logistic_model_path = r"C:\truthtell_Tech4Stack\logistic_model.pkl"
-naive_bayes_model_path = r"C:\truthtell_Tech4Stack\naive_bayes_model.pkl"
-svm_model_path = r"C:\truthtell_Tech4Stack\svm_model.pkl"
+logistic_model_path = r"C:\Users\Lenovo\OneDrive\Desktop\Truthtell_Tech4Stack\logistic_model.pkl"
+naive_bayes_model_path = r"C:\Users\Lenovo\OneDrive\Desktop\Truthtell_Tech4Stack\naive_bayes_model.pkl"
+svm_model_path = r"C:\Users\Lenovo\OneDrive\Desktop\Truthtell_Tech4Stack\svm_model.pkl"
 
 logistic_model = joblib.load(logistic_model_path)
 naive_bayes_model = joblib.load(naive_bayes_model_path)
@@ -22,8 +30,16 @@ svm_model = joblib.load(svm_model_path)
 
 class TextPreprocessor:
     def __init__(self):
-        self.lemmatizer = WordNetLemmatizer()
-        self.stop_words = set(stopwords.words('english'))
+        try:
+            self.lemmatizer = WordNetLemmatizer()
+            self.stop_words = set(stopwords.words('english'))
+        except LookupError as e:
+            print(f"NLTK resource not found: {e}")
+            # Fallback to empty set if stopwords unavailable
+            self.stop_words = set()
+        except Exception as e:
+            print(f"Error initializing TextPreprocessor: {e}")
+            self.stop_words = set()
     
     def clean_text(self, text):
         text = text.lower()  
@@ -105,6 +121,11 @@ def predict_svm(user_input: PredictionRequest):
     prediction_label = int(prediction[0])  
 
     return {"text": user_input.text, "predicted_label": prediction_label}
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
 
 if __name__ == "__main__":
     import uvicorn
