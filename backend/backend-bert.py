@@ -12,7 +12,6 @@ import re
 
 app = FastAPI()
 
-
 class BERTModel:
     def __init__(self, model_name='distilbert-base-uncased', num_labels=2, model_path=r'C:\truthtell_Tech4Stack\bert_model.pth'):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -44,9 +43,7 @@ class BERTModel:
 
         return predicted_class
 
-
 bert_model = BERTModel(model_path=r'C:\truthtell_Tech4Stack\bert_model.pth')  
-
 
 class TextPreprocessor:
     def __init__(self):
@@ -65,9 +62,25 @@ class TextPreprocessor:
         return ' '.join(tokens)
 
 
+def is_valid_text(text):
+    """Check if input text is valid and meaningful."""
+    if not isinstance(text, str) or not text.strip():
+        return False
+    
+    # Check if text is too short or just repeated characters
+    cleaned = text.lower().strip()
+    if len(cleaned) < 10 or len(set(cleaned)) < 5:
+        return False
+    
+    # Check if text has reasonable word/character ratio
+    words = cleaned.split()
+    if len(words) < 3 or sum(len(w) for w in words) / len(words) < 2:
+        return False
+    
+    return True
+
 class PredictionRequest(BaseModel):
     text: str  
-
 
 @app.post("/predict_bert")
 def predict_bert(user_input: PredictionRequest):
@@ -78,13 +91,17 @@ def predict_bert(user_input: PredictionRequest):
     Returns:
         A dictionary with predicted class label.
     """
+    if not is_valid_text(user_input.text):
+        return {"text": user_input.text, "predicted_label": 0}  # Return 'Fake' for garbage input
+    
     preprocessor = TextPreprocessor()
     cleaned_text = preprocessor.clean_text(user_input.text)
-
     
-    predicted_label = bert_model.predict(cleaned_text)
-
-    return {"text": user_input.text, "predicted_label": predicted_label}
+    try:
+        predicted_label = bert_model.predict(cleaned_text)
+        return {"text": user_input.text, "predicted_label": int(predicted_label)}
+    except:
+        return {"text": user_input.text, "predicted_label": 0}  # Return 'Fake' on error
 
 
 @app.get("/health")
